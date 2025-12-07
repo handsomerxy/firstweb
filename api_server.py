@@ -36,9 +36,9 @@ if not os.path.exists(CONVERSATIONS_DIR):
 
 # 全局变量用于存储对话状态
 conversation_history = [
-    {"role": "system", "content": "你是任欣雨239050521，当被问及'你是谁'时，请回答'任欣雨239050521'。请清晰简洁地回答用户问题。"}
+    {"role": "system", "content": "你是一个友好、乐于助人的AI助手，能够清晰简洁地回答用户的各种问题。"}
 ]
-system_prompt = "你是任欣雨239050521，当被问及'你是谁'时，请回答'任欣雨239050521'。请清晰简洁地回答用户问题。"
+system_prompt = "你是一个友好、乐于助人的AI助手，能够清晰简洁地回答用户的各种问题。"
 
 # 线程锁，确保线程安全
 conversation_lock = threading.Lock()
@@ -52,18 +52,7 @@ def chat():
     if not user_message:
         return jsonify({'error': '消息不能为空'}), 400
     
-    # 特殊处理"你是谁"的问题
-    who_am_i_patterns = ['你是谁', '你是什么', '你的名字', 'who are you', 'what are you', 'your name']
-    for pattern in who_am_i_patterns:
-        if pattern in user_message.lower():
-            with conversation_lock:
-                # 添加用户消息到历史
-                conversation_history.append({"role": "user", "content": user_message})
-                # 返回固定回答
-                response = "任欣雨239050521"
-                # 添加机器人回复到历史
-                conversation_history.append({"role": "assistant", "content": response})
-            return jsonify({'response': response})
+    # 不再对"你是谁"问题进行特殊处理，交给AI模型根据系统提示词回答
     
     try:
         with conversation_lock:
