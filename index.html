@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI聊天机器人</title>
+    <style>
+        /* 全局样式重置 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        /* 聊天容器 */
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: 80vh;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* 聊天头部 */
+        .chat-header {
+            background-color: #4a6fa5;
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .chat-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .header-controls button {
+            padding: 8px 12px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .header-controls button:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 聊天消息区域 */
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #fafafa;
+        }
+
+        /* 消息样式 */
+        .message {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-message {
+            align-items: flex-end;
+        }
+
+        .bot-message {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .user-message .message-content {
+            background-color: #4a6fa5;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .bot-message .message-content {
+            background-color: #e0e0e0;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+
+        /* 输入区域 */
+        .chat-input-container {
+            padding: 16px 20px;
+            background-color: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 24px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus {
+            border-color: #4a6fa5;
+        }
+
+        #send-btn {
+            padding: 12px 24px;
+            background-color: #4a6fa5;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #send-btn:hover {
+            background-color: #3a5a85;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 24px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-content h3 {
+            margin-bottom: 16px;
+            color: #333;
+            font-size: 18px;
+        }
+
+        .modal-content input,
+        .modal-content textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            margin-bottom: 16px;
+            outline: none;
+        }
+
+        .modal-content input:focus,
+        .modal-content textarea:focus {
+            border-color: #4a6fa5;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .modal-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #confirm-save,
+        #confirm-system {
+            background-color: #4a6fa5;
+            color: white;
+        }
+
+        #confirm-save:hover,
+        #confirm-system:hover {
+            background-color: #3a5a85;
+        }
+
+        #cancel-save,
+        #cancel-load,
+        #cancel-system {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+
+        #cancel-save:hover,
+        #cancel-load:hover,
+        #cancel-system:hover {
+            background-color: #d0d0d0;
+        }
+
+        /* 对话列表样式 */
+        #conversation-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+
+        .conversation-item {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .conversation-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .conversation-item:last-child {
+            border-bottom: none;
+        }
+
+        .conversation-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .conversation-date {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            body {
+                padding: 0;
+            }
+
+            .chat-container {
+                height: 100vh;
+                width: 100%;
+                border-radius: 0;
+            }
+
+            .message-content {
+                max-width: 85%;
+            }
+
+            .header-controls button {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+        }
+
+        /* 滚动条样式 */
+        .chat-messages::-webkit-scrollbar,
+        #conversation-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track,
+        #conversation-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb,
+        #conversation-list::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover,
+        #conversation-list::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>AI聊天机器人</h2>
+            <div class="header-controls">
+                <button id="save-btn">保存对话</button>
+                <button id="load-btn">加载对话</button>
+                <button id="system-btn">系统提示词</button>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">
+                <div class="message-content">
+                    <p>你好！我是AI聊天助手。有什么我可以帮助你的吗？</p>
+                    <p>提示：输入 'clear' 清空对话历史，输入 'save' 保存对话，输入 'load' 加载对话，输入 'system' 修改AI的系统提示词。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-input-container">
+            <input type="text" id="user-input" placeholder="请输入您的问题..." autocomplete="off">
+            <button id="send-btn">发送</button>
+        </div>
+    </div>
+
+    <!-- 保存对话模态框 -->
+    <div id="save-modal" class="modal">
+        <div class="modal-content">
+            <h3>保存对话</h3>
+            <input type="text" id="save-name" placeholder="请输入对话名称...">
+            <div class="modal-buttons">
+                <button id="confirm-save">保存</button>
+                <button id="cancel-save">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载对话模态框 -->
+    <div id="load-modal" class="modal">
+        <div class="modal-content">
+            <h3>加载对话</h3>
+            <div id="conversation-list">
+                <!-- 对话列表将通过JavaScript动态生成 -->
+            </div>
+            <div class="modal-buttons">
+                <button id="cancel-load">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统提示词模态框 -->
+    <div id="system-modal" class="modal">
+        <div class="modal-content">
+            <h3>系统提示词</h3>
+            <textarea id="system-prompt" rows="10" placeholder="请输入系统提示词..."></textarea>
+            <div class="modal-buttons">
+                <button id="confirm-system">确认</button>
+                <button id="cancel-system">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM元素引用
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        
+        // 模态框相关元素
+        const saveModal = document.getElementById('save-modal');
+        const loadModal = document.getElementById('load-modal');
+        const systemModal = document.getElementById('system-modal');
+        const saveNameInput = document.getElementById('save-name');
+        const conversationList = document.getElementById('conversation-list');
+        const systemPromptInput = document.getElementById('system-prompt');
+        
+        // 模态框按钮
+        const saveBtn = document.getElementById('save-btn');
+        const loadBtn = document.getElementById('load-btn');
+        const systemBtn = document.getElementById('system-btn');
+        const confirmSaveBtn = document.getElementById('confirm-save');
+        const cancelSaveBtn = document.getElementById('cancel-save');
+        const cancelLoadBtn = document.getElementById('cancel-load');
+        const confirmSystemBtn = document.getElementById('confirm-system');
+        const cancelSystemBtn = document.getElementById('cancel-system');
+        
+        // 对话历史
+        let conversationHistory = [];
+        
+        // 打字机效果函数
+        function typeWriter(text, element, speed = 30) {
+            let i = 0;
+            // 保存当前已输入的内容，避免在递归调用时清空
+            const currentContent = element.innerHTML;
+            
+            const typeInterval = setInterval(() => {
+                if (i < text.length) {
+                    // 处理换行符
+                    if (text.charAt(i) === '\n') {
+                        element.innerHTML = currentContent + text.substring(0, i) + '<br>';
+                    } else {
+                        element.innerHTML = currentContent + text.substring(0, i+1);
+                    }
+                    i++;
+                    // 对于标点符号稍微延长停顿
+                    if ([',', '，'].includes(text.charAt(i-1))) {
+                        clearInterval(typeInterval);
+                        setTimeout(() => {
+                            typeWriter(text.substring(i), element, speed);
+                        }, speed / 2);
+                    } else if (['.', '。', '!', '！', '?', '？', ';', '；'].includes(text.charAt(i-1))) {
+                        clearInterval(typeInterval);
+                        setTimeout(() => {
+                            typeWriter(text.substring(i), element, speed);
+                        }, speed);
+                    }
+                } else {
+                    clearInterval(typeInterval);
+                }
+            }, speed);
+        }
+        
+        // 添加消息到聊天界面
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            if (sender === 'bot') {
+                // 对于机器人消息，使用打字机效果
+                // 不再清空contentDiv，让typeWriter函数处理内容显示
+                messageDiv.appendChild(contentDiv);
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                typeWriter(text, contentDiv);
+            } else {
+                // 对于用户消息，直接显示
+                contentDiv.innerHTML = text;
+                messageDiv.appendChild(contentDiv);
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        }
+        
+        // 发送消息
+        function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            // 添加用户消息到界面
+            addMessage(message, 'user');
+            
+            // 清空输入框
+            userInput.value = '';
+            
+            // 处理特殊命令
+            if (message.toLowerCase() === 'clear') {
+                clearChat();
+                return;
+            } else if (message.toLowerCase() === 'save') {
+                openSaveModal();
+                return;
+            } else if (message.toLowerCase() === 'load') {
+                openLoadModal();
+                return;
+            } else if (message.toLowerCase() === 'system') {
+                openSystemModal();
+                return;
+            }
+            
+            // 调用API获取机器人回复（这里暂时使用模拟回复）
+            getBotResponse(message);
+        }
+        
+        // 获取机器人回复（通过API调用）
+        async function getBotResponse(userMessage) {
+            // 添加加载中的提示
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message bot-message';
+            loadingDiv.id = 'loading-message';
+            const loadingContent = document.createElement('div');
+            loadingContent.className = 'message-content';
+            loadingContent.textContent = '正在思考...';
+            loadingDiv.appendChild(loadingContent);
+            chatMessages.appendChild(loadingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            try {
+                // 调用API获取回复
+                const response = await fetch('http://localhost:5000/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: userMessage })
+                });
+                
+                const data = await response.json();
+                
+                // 移除加载提示
+                const loadingMessage = document.getElementById('loading-message');
+                if (loadingMessage) {
+                    chatMessages.removeChild(loadingMessage);
+                }
+                
+                if (response.ok) {
+                    // 添加机器人回复到界面
+                    addMessage(data.response, 'bot');
+                    
+                    // 更新对话历史
+                    conversationHistory.push({
+                        sender: 'user',
+                        message: userMessage
+                    });
+                    conversationHistory.push({
+                        sender: 'bot',
+                        message: data.response
+                    });
+                } else {
+                    // 显示错误消息
+                    addMessage(`错误: ${data.error || '请求失败'}`, 'bot');
+                }
+            } catch (error) {
+                // 移除加载提示
+                const loadingMessage = document.getElementById('loading-message');
+                if (loadingMessage) {
+                    chatMessages.removeChild(loadingMessage);
+                }
+                
+                // 显示网络错误
+                addMessage(`网络错误: 无法连接到服务器。请确保后端服务正在运行。`, 'bot');
+                console.error('API调用错误:', error);
+            }
+        }
+        
+        // 清空聊天
+        async function clearChat() {
+            try {
+                // 调用API清空对话
+                const response = await fetch('http://localhost:5000/api/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // 清空界面
+                chatMessages.innerHTML = '';
+                conversationHistory = [];
+                
+                if (response.ok) {
+                    addMessage(data.message || "对话历史已清空。有什么我可以帮助你的吗？", 'bot');
+                } else {
+                    addMessage(`清空失败: ${data.error || '操作失败'}`, 'bot');
+                }
+            } catch (error) {
+                // 即使API调用失败，也清空本地界面
+                chatMessages.innerHTML = '';
+                conversationHistory = [];
+                addMessage("对话历史已清空。有什么我可以帮助你的吗？", 'bot');
+                console.error('清空对话错误:', error);
+            }
+        }
+        
+        // 模态框控制函数
+        function openModal(modal) {
+            modal.style.display = 'flex';
+        }
+        
+        function closeModal(modal) {
+            modal.style.display = 'none';
+        }
+        
+        function openSaveModal() {
+            saveNameInput.value = '';
+            openModal(saveModal);
+        }
+        
+        function openLoadModal() {
+            // 模拟加载对话列表（实际应用中会从API获取）
+            loadConversationList();
+            openModal(loadModal);
+        }
+        
+        // 打开系统提示词模态框
+        async function openSystemModal() {
+            try {
+                // 从API获取当前系统提示词
+                const response = await fetch('http://localhost:5000/api/system-prompt', {
+                    method: 'GET'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    systemPromptInput.value = data.system_prompt || "你是一个有用的AI助手。";
+                } else {
+                    // 使用默认值
+                    systemPromptInput.value = "你是一个有用的AI助手。";
+                }
+            } catch (error) {
+                // 使用默认值
+                systemPromptInput.value = "你是一个有用的AI助手。";
+                console.error('获取系统提示词错误:', error);
+            }
+            
+            openModal(systemModal);
+        }
+        
+        // 保存对话
+        async function saveConversation() {
+            const name = saveNameInput.value.trim();
+            if (!name) {
+                alert('请输入对话名称');
+                return;
+            }
+            
+            try {
+                // 调用API保存对话
+                const response = await fetch('http://localhost:5000/api/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: name })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 显示保存成功提示
+                    addMessage(data.message || `对话已保存为: ${name}`, 'bot');
+                    // 关闭模态框
+                    closeModal(saveModal);
+                } else {
+                    // 显示错误消息
+                    alert(`保存失败: ${data.error || '操作失败'}`);
+                }
+            } catch (error) {
+                alert('保存对话时发生错误，请确保后端服务正在运行');
+                console.error('保存对话错误:', error);
+            }
+        }
+        
+        // 加载对话列表
+        async function loadConversationList() {
+            // 清空现有列表
+            conversationList.innerHTML = '';
+            
+            try {
+                // 从API获取对话列表
+                const response = await fetch('http://localhost:5000/api/load-list', {
+                    method: 'GET'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const conversations = data.conversations || [];
+                    
+                    if (conversations.length === 0) {
+                        // 显示没有对话的提示
+                        const noConvDiv = document.createElement('div');
+                        noConvDiv.className = 'no-conversations';
+                        noConvDiv.textContent = '没有保存的对话';
+                        noConvDiv.style.padding = '20px';
+                        noConvDiv.style.textAlign = 'center';
+                        noConvDiv.style.color = '#999';
+                        conversationList.appendChild(noConvDiv);
+                    } else {
+                        // 创建列表项
+                        conversations.forEach(conv => {
+                            const item = document.createElement('div');
+                            item.className = 'conversation-item';
+                            item.onclick = () => loadConversation(conv.filename, conv.name);
+                            
+                            const nameSpan = document.createElement('div');
+                            nameSpan.className = 'conversation-name';
+                            nameSpan.textContent = conv.name;
+                            
+                            const dateSpan = document.createElement('div');
+                            dateSpan.className = 'conversation-date';
+                            // 格式化日期
+                            const date = new Date(conv.timestamp);
+                            dateSpan.textContent = date.toLocaleString('zh-CN');
+                            
+                            item.appendChild(nameSpan);
+                            item.appendChild(dateSpan);
+                            conversationList.appendChild(item);
+                        });
+                    }
+                } else {
+                    // 显示错误消息
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message';
+                    errorDiv.textContent = '获取对话列表失败';
+                    errorDiv.style.padding = '20px';
+                    errorDiv.style.textAlign = 'center';
+                    errorDiv.style.color = '#ff4444';
+                    conversationList.appendChild(errorDiv);
+                }
+            } catch (error) {
+                // 显示网络错误
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = '无法连接到服务器，请确保后端服务正在运行';
+                errorDiv.style.padding = '20px';
+                errorDiv.style.textAlign = 'center';
+                errorDiv.style.color = '#ff4444';
+                conversationList.appendChild(errorDiv);
+                console.error('加载对话列表错误:', error);
+            }
+        }
+        
+        // 加载对话
+        async function loadConversation(filename, name) {
+            try {
+                // 调用API加载对话
+                const response = await fetch(`http://localhost:5000/api/load/${encodeURIComponent(filename)}`, {
+                    method: 'GET'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 清空当前聊天
+                    chatMessages.innerHTML = '';
+                    conversationHistory = [];
+                    
+                    // 加载对话消息
+                    if (data.messages && data.messages.length > 0) {
+                        // 过滤掉系统消息，系统消息不应显示在界面上
+                        const displayMessages = data.messages.filter(msg => msg.role !== 'system');
+                        
+                        if (displayMessages.length > 0) {
+                            displayMessages.forEach(msg => {
+                                // 转换OpenAI格式(role/content)到前端格式(sender/message)
+                                const sender = msg.role === 'user' ? 'user' : 'bot';
+                                addMessage(msg.content, sender);
+                            });
+                        } else {
+                            // 如果没有非系统消息，显示加载成功提示
+                            addMessage(`已加载对话: ${name}`, 'bot');
+                        }
+                    } else {
+                        // 显示加载成功提示
+                        addMessage(data.message || `已加载对话: ${name}`, 'bot');
+                    }
+                    
+                    // 更新本地对话历史，转换为前端格式
+                    if (data.messages) {
+                        conversationHistory = data.messages.map(msg => ({
+                            sender: msg.role === 'user' ? 'user' : 'bot',
+                            message: msg.content
+                        }));
+                    }
+                    
+                    // 关闭模态框
+                    closeModal(loadModal);
+                } else {
+                    // 显示错误消息
+                    alert(`加载失败: ${data.error || '操作失败'}`);
+                }
+            } catch (error) {
+                alert('加载对话时发生错误，请确保后端服务正在运行');
+                console.error('加载对话错误:', error);
+            }
+        }
+        
+        // 更新系统提示词
+        async function updateSystemPrompt() {
+            const newPrompt = systemPromptInput.value.trim();
+            if (!newPrompt) {
+                alert('系统提示词不能为空');
+                return;
+            }
+            
+            try {
+                // 调用API更新系统提示词
+                const response = await fetch('http://localhost:5000/api/system-prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ system_prompt: newPrompt })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 显示更新成功提示
+                    addMessage(data.message || '系统提示词已更新', 'bot');
+                    // 关闭模态框
+                    closeModal(systemModal);
+                } else {
+                    // 显示错误消息
+                    alert(`更新失败: ${data.error || '操作失败'}`);
+                }
+            } catch (error) {
+                alert('更新系统提示词时发生错误，请确保后端服务正在运行');
+                console.error('更新系统提示词错误:', error);
+            }
+        }
+        
+        // 事件监听器
+        sendBtn.addEventListener('click', sendMessage);
+        
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // 模态框按钮事件
+        saveBtn.addEventListener('click', openSaveModal);
+        loadBtn.addEventListener('click', openLoadModal);
+        systemBtn.addEventListener('click', openSystemModal);
+        
+        confirmSaveBtn.addEventListener('click', saveConversation);
+        cancelSaveBtn.addEventListener('click', () => closeModal(saveModal));
+        
+        cancelLoadBtn.addEventListener('click', () => closeModal(loadModal));
+        
+        confirmSystemBtn.addEventListener('click', updateSystemPrompt);
+        cancelSystemBtn.addEventListener('click', () => closeModal(systemModal));
+        
+        // 点击模态框外部关闭模态框
+        window.addEventListener('click', (e) => {
+            if (e.target === saveModal) closeModal(saveModal);
+            if (e.target === loadModal) closeModal(loadModal);
+            if (e.target === systemModal) closeModal(systemModal);
+        });
+    </script>
+</body>
+</html>
