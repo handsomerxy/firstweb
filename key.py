@@ -1,377 +1,286 @@
-# Please install OpenAI SDK first: `pip3 install openai`
-from openai import OpenAI
-import time
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import json
-from datetime import datetime
 import os
+import sys
+from datetime import datetime
+import threading
+import io
+import contextlib
 
-client = OpenAI(
-  base_url="https://api.tokenpony.cn/v1",
-  api_key="sk-ef44e1b5f2174411acaa32c79d547af8", #替换为您的API Key
-)
+# 确保可以导入key.py
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# 配置参数
-MAX_TOKENS_PER_MESSAGE = 1000  # 每条消息的最大token数
-MAX_TOTAL_TOKENS = 4000       # 对话历史的最大总token数
-MAX_MESSAGES = 10             # 保留的最大消息数量（不包括系统消息）
-LOG_DIR = "logs"               # 日志目录
-CONVERSATIONS_DIR = "conversations"  # 对话保存目录
+# 导入key.py中的功能
+try:
+    # 只导入必要的功能，避免执行key.py的主程序
+    import key
+    # 检查是否成功导入了OpenAI客户端
+    if hasattr(key, 'client'):
+        has_key_module = True
+        print("成功导入key.py模块，将使用OpenAI API功能")
+    else:
+        has_key_module = False
+        print("key.py模块导入成功但缺少client对象，将使用模拟功能")
+except ImportError:
+    print("无法导入key.py模块，将使用模拟功能")
+    has_key_module = False
 
-# 确保目录存在
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+app = Flask(__name__)
+CORS(app)  # 启用CORS支持
+
+# 配置
+CONVERSATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'conversations')
 if not os.path.exists(CONVERSATIONS_DIR):
     os.makedirs(CONVERSATIONS_DIR)
 
-# 日志记录函数
-def log_message(level, message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_file = os.path.join(LOG_DIR, f"chatbot_{datetime.now().strftime('%Y-%m-%d')}.log")
-    log_entry = f"[{timestamp}] [{level.upper()}] {message}\n"
-    
-    # 写入日志文件
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(log_entry)
-    
-    # 如果是错误或警告，同时打印到控制台
-    if level in ["error", "warning"]:
-        print(f"[{timestamp}] [{level.upper()}] {message}")
-
-# 打字机效果函数
-def print_with_typewriter(text, delay=0.03):
-    """
-    打字机效果打印文本
-    
-    Args:
-        text: 要打印的文本
-        delay: 每个字符间的延迟时间（秒）
-    """
-    try:
-        import sys
-        for char in text:
-            print(char, end="", flush=True)
-            # 根据字符调整延迟，让标点符号停顿时间稍长
-            if char in [".", "。", "!", "！", "?", "？", ";", "；", ":", "："]:
-                time.sleep(delay * 3)
-            elif char in [",", "，", "、"]:
-                time.sleep(delay * 2)
-            elif char == "\n":
-                time.sleep(delay * 10)
-            else:
-                time.sleep(delay)
-        print()  # 最后换行
-    except KeyboardInterrupt:
-        print("\n")  # 确保中断后也换行
-
-# 保存对话历史
-def save_conversation(conversation_history, filename=None):
-    try:
-        # 如果没有提供文件名，使用当前时间生成
-        if filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"conversation_{timestamp}.json"
-        
-        # 确保文件名以.json结尾
-        if not filename.endswith(".json"):
-            filename += ".json"
-        
-        # 构建完整路径
-        filepath = os.path.join(CONVERSATIONS_DIR, filename)
-        
-        # 保存对话历史
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(conversation_history, f, ensure_ascii=False, indent=2)
-        
-        log_message("info", f"对话已保存到 {filepath}")
-        return True, filepath
-    except Exception as e:
-        log_message("error", f"保存对话时出错: {str(e)}")
-        return False, str(e)
-
-# 加载对话历史
-def load_conversation(filename):
-    try:
-        # 确保文件名以.json结尾
-        if not filename.endswith(".json"):
-            filename += ".json"
-        
-        # 构建完整路径
-        filepath = os.path.join(CONVERSATIONS_DIR, filename)
-        
-        # 检查文件是否存在
-        if not os.path.exists(filepath):
-            return False, f"文件 {filepath} 不存在"
-        
-        # 加载对话历史
-        with open(filepath, "r", encoding="utf-8") as f:
-            conversation_history = json.load(f)
-        
-        log_message("info", f"对话已从 {filepath} 加载")
-        return True, conversation_history
-    except json.JSONDecodeError:
-        log_message("error", f"无法解析JSON文件 {filename}")
-        return False, f"文件 {filename} 不是有效的JSON文件"
-    except Exception as e:
-        log_message("error", f"加载对话时出错: {str(e)}")
-        return False, str(e)
-
-# 列出所有保存的对话
-def list_conversations():
-    try:
-        # 获取所有.json文件
-        files = [f for f in os.listdir(CONVERSATIONS_DIR) if f.endswith(".json")]
-        
-        # 按修改时间排序，最新的在前
-        files.sort(key=lambda x: os.path.getmtime(os.path.join(CONVERSATIONS_DIR, x)), reverse=True)
-        
-        return True, files
-    except Exception as e:
-        log_message("error", f"列出对话时出错: {str(e)}")
-        return False, str(e)
-
-# 简单的token估算函数（实际应用中可使用更准确的tokenizer）
-def count_tokens(text):
-    # 一个简单的估算，实际token数可能会有所不同
-    return len(text) // 4  # 粗略估算：1 token ≈ 4个字符
-
-# 限制对话历史长度
-def limit_conversation_history(conversation_history):
-    # 保留系统消息
-    system_messages = [msg for msg in conversation_history if msg['role'] == 'system']
-    user_assistant_messages = [msg for msg in conversation_history if msg['role'] != 'system']
-    
-    # 如果消息数量超过限制，只保留最近的消息
-    if len(user_assistant_messages) > MAX_MESSAGES:
-        user_assistant_messages = user_assistant_messages[-MAX_MESSAGES:]
-    
-    # 重新组合消息历史
-    limited_history = system_messages + user_assistant_messages
-    
-    # 计算总token数并限制
-    total_tokens = sum(count_tokens(msg['content']) for msg in limited_history)
-    
-    # 如果总token数超过限制，从最早的用户/助手消息开始删除
-    while total_tokens > MAX_TOTAL_TOKENS and len(user_assistant_messages) > 2:
-        removed_message = user_assistant_messages.pop(0)
-        total_tokens -= count_tokens(removed_message['content'])
-        limited_history = system_messages + user_assistant_messages
-    
-    return limited_history
-
-# 初始化对话历史
+# 全局变量用于存储对话状态
 conversation_history = [
-    {"role": "system", "content": "You are a helpful AI assistant. Please respond clearly and concisely."}
+    {"role": "system", "content": "你是任欣雨239050521，当被问及'你是谁'时，请回答'任欣雨239050521'。请清晰简洁地回答用户问题。"}
 ]
+system_prompt = "你是任欣雨239050521，当被问及'你是谁'时，请回答'任欣雨239050521'。请清晰简洁地回答用户问题。"
 
-# 记录启动日志
-log_message("info", "聊天机器人启动成功")
+# 线程锁，确保线程安全
+conversation_lock = threading.Lock()
 
-# 只有当直接运行此文件时才执行主程序
-if __name__ == "__main__":
-    print("欢迎使用聊天机器人！")
-    print("输入 'exit' 或 '退出' 结束对话。")
-    print("输入 'save' 保存当前对话。")
-    print("输入 'load' 加载之前的对话。")
-    print("输入 'list' 查看所有保存的对话。")
-    print("输入 'system' 修改AI的系统提示词。")
-    print("=" * 50)
-
-    while True:
-        # 获取用户输入
-        try:
-            user_input = input("用户: ").strip()
-        except KeyboardInterrupt:
-            print("\n\n程序被用户中断，再见！")
-            log_message("info", "程序被用户中断")
-            break
-        except Exception as e:
-            log_message("error", f"获取用户输入时出错: {str(e)}")
-            print("AI: 抱歉，处理您的输入时出现了问题。")
-            continue
-        
-        # 检查特殊命令
-        if user_input.lower() in ["exit", "退出"]:
-            print("感谢使用，再见！")
-            log_message("info", "程序正常退出")
-            break
-        
-        elif user_input.lower() == "system":
-            print("当前系统提示词：")
-            current_system_message = next((msg['content'] for msg in conversation_history if msg['role'] == 'system'), "未设置")
-            print(current_system_message)
-            print("\n请输入新的系统提示词（留空则保持不变）: ")
-            try:
-                new_system_prompt = input().strip()
-                if new_system_prompt:
-                    # 移除现有的系统消息
-                    conversation_history = [msg for msg in conversation_history if msg['role'] != 'system']
-                    # 添加新的系统消息
-                    conversation_history.insert(0, {"role": "system", "content": new_system_prompt})
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter("系统提示词已成功更新！")
-                    log_message("info", f"系统提示词已更新: {new_system_prompt[:100]}...")
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """处理聊天消息"""
+    data = request.json
+    user_message = data.get('message', '').strip()
+    
+    if not user_message:
+        return jsonify({'error': '消息不能为空'}), 400
+    
+    # 特殊处理"你是谁"的问题
+    who_am_i_patterns = ['你是谁', '你是什么', '你的名字', 'who are you', 'what are you', 'your name']
+    for pattern in who_am_i_patterns:
+        if pattern in user_message.lower():
+            with conversation_lock:
+                # 添加用户消息到历史
+                conversation_history.append({"role": "user", "content": user_message})
+                # 返回固定回答
+                response = "任欣雨239050521"
+                # 添加机器人回复到历史
+                conversation_history.append({"role": "assistant", "content": response})
+            return jsonify({'response': response})
+    
+    try:
+        with conversation_lock:
+            if has_key_module:
+                # 检查特殊命令
+                if user_message.lower() in ['clear', 'save', 'load', 'list', 'system']:
+                    # 特殊命令处理
+                    if user_message.lower() == 'clear':
+                        conversation_history.clear()
+                        conversation_history.append({"role": "system", "content": system_prompt})
+                        response = "对话历史已清空。有什么我可以帮助你的吗？"
+                    elif user_message.lower() == 'save':
+                        response = "请输入对话名称以保存。"
+                    elif user_message.lower() == 'load':
+                        response = "请选择要加载的对话。"
+                    elif user_message.lower() == 'list':
+                        response = "请查看保存的对话列表。"
+                    elif user_message.lower() == 'system':
+                        response = f"当前系统提示词: {system_prompt}\n请输入新的系统提示词。"
                 else:
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter("系统提示词未更改。")
-            except KeyboardInterrupt:
-                print("\n操作已取消")
-            print("=" * 50)
-            continue
-        
-        elif user_input.lower() == "save":
-            print("请输入保存名称（留空使用默认名称）: ")
-            try:
-                save_name = input().strip()
-                success, result = save_conversation(conversation_history, save_name if save_name else None)
-                if success:
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter(f"对话已成功保存到 {result}")
-                else:
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter(f"保存对话失败 - {result}")
-            except KeyboardInterrupt:
-                print("\n保存操作已取消")
-            print("=" * 50)
-            continue
-        
-        elif user_input.lower() == "load":
-            # 列出所有对话
-            success, files = list_conversations()
-            if success:
-                if not files:
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter("没有找到保存的对话。")
-                else:
-                    print("保存的对话列表:")
-                    for i, file in enumerate(files, 1):
-                        # 获取文件修改时间
-                        mtime = os.path.getmtime(os.path.join(CONVERSATIONS_DIR, file))
-                        mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        print(f"{i}. {file} ({mtime_str})")
+                    # 普通消息处理 - 使用key.py的逻辑
+                    # 将用户输入添加到对话历史
+                    conversation_history.append({"role": "user", "content": user_message})
                     
-                    print("\n请输入要加载的对话编号或文件名: ")
+                    # 限制对话历史长度（模拟key.py中的功能）
+                    def count_tokens(text):
+                        return len(text) // 4
+                    
+                    MAX_MESSAGES = 10
+                    MAX_TOTAL_TOKENS = 4000
+                    
+                    system_messages = [msg for msg in conversation_history if msg['role'] == 'system']
+                    user_assistant_messages = [msg for msg in conversation_history if msg['role'] != 'system']
+                    
+                    if len(user_assistant_messages) > MAX_MESSAGES:
+                        user_assistant_messages = user_assistant_messages[-MAX_MESSAGES:]
+                    
+                    limited_history = system_messages + user_assistant_messages
+                    total_tokens = sum(count_tokens(msg['content']) for msg in limited_history)
+                    
+                    while total_tokens > MAX_TOTAL_TOKENS and len(user_assistant_messages) > 2:
+                        removed_message = user_assistant_messages.pop(0)
+                        total_tokens -= count_tokens(removed_message['content'])
+                        limited_history = system_messages + user_assistant_messages
+                    
+                    conversation_history[:] = limited_history
+                    
+                    # 调用OpenAI API获取响应
                     try:
-                        load_input = input().strip()
-                        # 尝试解析为编号
-                        try:
-                            index = int(load_input) - 1
-                            if 0 <= index < len(files):
-                                filename = files[index]
-                            else:
-                                print("AI: ", end="", flush=True)
-                                print_with_typewriter("无效的编号。")
-                                print("=" * 50)
-                                continue
-                        except ValueError:
-                            # 不是编号，直接作为文件名
-                            filename = load_input
+                        response_obj = key.client.chat.completions.create(
+                            model="deepseek-v3.2-exp",
+                            messages=conversation_history,
+                            temperature=0.7,
+                            max_tokens=512,
+                            stream=False,
+                            timeout=30
+                        )
+                        response = response_obj.choices[0].message.content.strip()
                         
-                        success, result = load_conversation(filename)
-                        if success:
-                            conversation_history = result
-                            print("AI: ", end="", flush=True)
-                            print_with_typewriter("对话已成功加载。")
+                        # 将AI响应添加到对话历史
+                        conversation_history.append({"role": "assistant", "content": response})
+                        
+                    except Exception as e:
+                        # 如果API调用失败，使用模拟回复
+                        error_message = str(e)
+                        if "API key" in error_message:
+                            response = "认证失败，请检查您的API密钥是否正确。"
+                        elif "rate limit" in error_message.lower():
+                            response = "当前请求频率过高，请稍后再试。"
+                        elif "context length" in error_message.lower():
+                            response = "对话内容过长，请尝试开始一个新的对话。"
                         else:
-                            print("AI: ", end="", flush=True)
-                            print_with_typewriter(f"加载对话失败 - {result}")
-                    except KeyboardInterrupt:
-                        print("\n加载操作已取消")
+                            response = f"抱歉，发生了错误 - {error_message[:100]}"
+                        
+                        # 移除最后添加的用户输入
+                        if len(conversation_history) > 1:
+                            conversation_history.pop()
             else:
-                print("AI: ", end="", flush=True)
-                print_with_typewriter(f"列出对话失败 - {files}")
-            print("=" * 50)
-            continue
+                # 使用模拟回复
+                response = f"这是对 '{user_message}' 的模拟回复。无法连接到key.py模块。"
+                
+        return jsonify({'response': response})
+    except Exception as e:
+        return jsonify({'error': f'处理消息时出错: {str(e)}'}), 500
+
+@app.route('/api/save', methods=['POST'])
+def save_conversation():
+    """保存对话"""
+    data = request.json
+    name = data.get('name', '').strip()
+    
+    if not name:
+        return jsonify({'error': '对话名称不能为空'}), 400
+    
+    try:
+        with conversation_lock:
+            # 生成文件名
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{name}_{timestamp}.json"
+            filepath = os.path.join(CONVERSATIONS_DIR, filename)
+            
+            # 准备对话数据
+            conversation_data = {
+                'name': name,
+                'timestamp': datetime.now().isoformat(),
+                'messages': conversation_history,
+                'system_prompt': system_prompt
+            }
+            
+            # 保存对话
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(conversation_data, f, ensure_ascii=False, indent=2)
+            
+            return jsonify({'success': True, 'message': f'对话已保存为: {name}'})
+    except Exception as e:
+        return jsonify({'error': f'保存对话时出错: {str(e)}'}), 500
+
+@app.route('/api/load-list', methods=['GET'])
+def load_conversation_list():
+    """获取对话列表"""
+    try:
+        conversations = []
         
-        elif user_input.lower() == "list":
-            success, files = list_conversations()
-            if success:
-                if not files:
-                    print("AI: ", end="", flush=True)
-                    print_with_typewriter("没有找到保存的对话。")
-                else:
-                    print("保存的对话列表:")
-                    for i, file in enumerate(files, 1):
-                        mtime = os.path.getmtime(os.path.join(CONVERSATIONS_DIR, file))
-                        mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        print(f"{i}. {file} ({mtime_str})")
-            else:
-                print("AI: ", end="", flush=True)
-                print_with_typewriter(f"列出对话失败 - {files}")
-            print("=" * 50)
-            continue
+        # 检查目录是否存在
+        if not os.path.exists(CONVERSATIONS_DIR):
+            os.makedirs(CONVERSATIONS_DIR)
+            return jsonify({'conversations': []})
         
-        # 检查输入是否为空
-        if not user_input:
-            print("AI: ", end="", flush=True)
-            print_with_typewriter("请输入您的问题或需求。")
-            continue
+        # 读取所有对话文件
+        for filename in os.listdir(CONVERSATIONS_DIR):
+            if filename.endswith('.json'):
+                filepath = os.path.join(CONVERSATIONS_DIR, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    conversations.append({
+                        'filename': filename,
+                        'name': data.get('name', '未命名对话'),
+                        'timestamp': data.get('timestamp', ''),
+                        'message_count': len(data.get('messages', []))
+                    })
+                except Exception as e:
+                    print(f"读取对话文件 {filename} 时出错: {e}")
         
-        try:
-            # 检查用户输入长度
-            if len(user_input) > MAX_TOKENS_PER_MESSAGE * 4:  # 粗略估算
-                print("AI: ", end="", flush=True)
-                print_with_typewriter("您的消息太长了，请尝试缩短输入内容。")
-                print("=" * 50)
-                log_message("warning", "用户输入过长，已拒绝处理")
-                continue
-            
-            log_message("info", f"用户输入: {user_input[:100]}..." if len(user_input) > 100 else f"用户输入: {user_input}")
-            
-            # 将用户输入添加到对话历史
-            conversation_history.append({"role": "user", "content": user_input})
-            
-            # 限制对话历史长度
-            conversation_history = limit_conversation_history(conversation_history)
-            
-            # 添加请求超时处理
-            try:
-                # 调用OpenAI API获取响应
-                response = client.chat.completions.create(
-                    model="deepseek-v3.2-exp", #替换为您要使用的模型名称
-                    messages=conversation_history,
-                    temperature=0.7,  # 设置温度以增加响应的多样性
-                    max_tokens=512,   # 增加最大 tokens 以支持更长的响应
-                    stream=False,
-                    timeout=30  # 设置30秒超时
-                )
-            except TimeoutError:
-                log_message("error", "API请求超时")
-                print("AI: ", end="", flush=True)
-                print_with_typewriter("服务器响应超时，请稍后再试。")
-                print("=" * 50)
-                conversation_history.pop()  # 移除最后添加的用户输入
-                continue
-            
-            # 提取并打印AI响应
-            ai_response = response.choices[0].message.content.strip()
-            print("AI: ", end="", flush=True)
-            print_with_typewriter(ai_response)
-            print("=" * 50)
-            
-            log_message("info", f"AI响应: {ai_response[:100]}..." if len(ai_response) > 100 else f"AI响应: {ai_response}")
-            
-            # 将AI响应添加到对话历史
-            conversation_history.append({"role": "assistant", "content": ai_response})
-            
-        except Exception as e:
-            error_message = str(e)
-            log_message("error", f"处理对话时出错: {error_message}")
-            
-            # 根据不同错误类型提供友好提示
-            if "API key" in error_message:
-                print("AI: ", end="", flush=True)
-                print_with_typewriter("认证失败，请检查您的API密钥是否正确。")
-            elif "rate limit" in error_message.lower():
-                print("AI: ", end="", flush=True)
-                print_with_typewriter("当前请求频率过高，请稍后再试。")
-            elif "context length" in error_message.lower():
-                print("AI: ", end="", flush=True)
-                print_with_typewriter("对话内容过长，请尝试开始一个新的对话。")
-            else:
-                print("AI: ", end="", flush=True)
-                print_with_typewriter(f"抱歉，发生了错误 - {error_message[:100]}")
-            
-            print("=" * 50)
-            # 移除最后添加的用户输入，避免影响后续对话
-            if len(conversation_history) > 1:  # 确保至少保留系统消息
-                conversation_history.pop()
+        # 按时间倒序排序
+        conversations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        return jsonify({'conversations': conversations})
+    except Exception as e:
+        return jsonify({'error': f'获取对话列表时出错: {str(e)}'}), 500
+
+@app.route('/api/load/<filename>', methods=['GET'])
+def load_conversation(filename):
+    """加载指定对话"""
+    try:
+        filepath = os.path.join(CONVERSATIONS_DIR, filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': '对话文件不存在'}), 404
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        with conversation_lock:
+            # 更新实际对话历史
+            conversation_history.clear()
+            conversation_history.extend(data.get('messages', []))
+            system_prompt = data.get('system_prompt', '你是一个有用的AI助手')
+        
+        return jsonify({
+            'success': True,
+            'messages': conversation_history,
+            'system_prompt': system_prompt
+        })
+    except Exception as e:
+        return jsonify({'error': f'加载对话时出错: {str(e)}'}), 500
+
+@app.route('/api/system-prompt', methods=['GET', 'POST'])
+def handle_system_prompt():
+    """获取或设置系统提示词"""
+    global system_prompt
+    
+    if request.method == 'GET':
+        return jsonify({'system_prompt': system_prompt})
+    
+    elif request.method == 'POST':
+        data = request.json
+        new_prompt = data.get('system_prompt', '').strip()
+        
+        if not new_prompt:
+            return jsonify({'error': '系统提示词不能为空'}), 400
+        
+        with conversation_lock:
+            system_prompt = new_prompt
+        return jsonify({'success': True, 'message': '系统提示词已更新'})
+
+@app.route('/api/clear', methods=['POST'])
+def clear_conversation():
+    """清空对话历史"""
+    try:
+        with conversation_lock:
+            conversation_history.clear()
+        return jsonify({'success': True, 'message': '对话历史已清空'})
+    except Exception as e:
+        return jsonify({'error': f'清空对话历史时出错: {str(e)}'}), 500
+
+# 添加静态文件路由
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('.', path)
+
+if __name__ == '__main__':
+    print("启动API服务器...")
+    print(f"对话保存目录: {CONVERSATIONS_DIR}")
+    app.run(host='0.0.0.0', port=5000, debug=True)
