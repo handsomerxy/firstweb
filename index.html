@@ -506,7 +506,7 @@
             
             try {
                 // 调用API获取回复
-                const response = await fetch('http://localhost:5000/api/chat', {
+                const response = await fetch('https://incommunicative-interneural-katharyn.ngrok-free.dev/api/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -556,7 +556,7 @@
         async function clearChat() {
             try {
                 // 调用API清空对话
-                const response = await fetch('http://localhost:5000/api/clear', {
+                const response = await fetch('https://incommunicative-interneural-katharyn.ngrok-free.dev/api/clear', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -607,7 +607,7 @@
         async function openSystemModal() {
             try {
                 // 从API获取当前系统提示词
-                const response = await fetch('http://localhost:5000/api/system-prompt', {
+                const response = await fetch('https://incommunicative-interneural-katharyn.ngrok-free.dev/api/system-prompt', {
                     method: 'GET'
                 });
                 
@@ -637,7 +637,7 @@
             
             try {
                 // 调用API保存对话
-                const response = await fetch('http://localhost:5000/api/save', {
+                const response = await fetch('https://incommunicative-interneural-katharyn.ngrok-free.dev/api/save', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -669,7 +669,7 @@
             
             try {
                 // 从API获取对话列表
-                const response = await fetch('http://localhost:5000/api/load-list', {
+                const response = await fetch('https://incommunicative-interneural-katharyn.ngrok-free.dev/api/load-list', {
                     method: 'GET'
                 });
                 
@@ -735,7 +735,7 @@
         async function loadConversation(filename, name) {
             try {
                 // 调用API加载对话
-                const response = await fetch(`http://localhost:5000/api/load/${encodeURIComponent(filename)}`, {
+                const response = await fetch(`https://incommunicative-interneural-katharyn.ngrok-free.dev/api/load/${encodeURIComponent(filename)}`, {
                     method: 'GET'
                 });
                 
@@ -796,7 +796,7 @@
             
             try {
                 // 调用API更新系统提示词
-                const response = await fetch('http://localhost:5000/api/system-prompt', {
+                const response = await fetch('/api/system-prompt', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
